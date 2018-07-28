@@ -1,6 +1,6 @@
 import numpy as np
-from collections import deque
 import copy
+import h5py
 
 # Declaration of constants to represent each possible
 # item in the grid world representation.
@@ -77,37 +77,47 @@ class GridWorld2D:
 	# Initialize world with its x and y dimensions, the
 	# total number of obstacles to be created in the world,
 	# and the total number of agents in the world
-	def __init__(self, world_x, world_y, num_obstacles, num_agents, max_obstacle_dim):
+	def __init__(self, world_x, world_y, num_obstacles, num_agents, max_obstacle_dim, saved_state = None):
 		# World is a 2D array with empty spots, obstacles,
 		# a marker of the agents's current positions, and
 		# the goal's positions.
+		if saved_state is None:
+			# Make sure that the desired world is realizable
+			SLACK = 2
+			assert(SLACK * (2 * num_agents + num_obstacles) < world_x * world_y)
 
-		# Initialize agent and goal locations in the world in addition
-		# to initializing all cells in the grid representation in the
-		# world as empty
-		self.num_agents = num_agents
-		self.max_obstacle_dim = max_obstacle_dim
-		self.agent_locs = np.zeros((self.num_agents, 2)).astype(int)
-		self.agent_goal_locs = np.zeros((self.num_agents, 2)).astype(int)
-		self.world = np.zeros((world_x, world_y)) + WORLD['EMPTY']
+			# Initialize agent and goal locations in the world in addition
+			# to initializing all cells in the grid representation in the
+			# world as empty
+			self.num_agents = num_agents
+			self.max_obstacle_dim = max_obstacle_dim
+			self.agent_locs = np.zeros((self.num_agents, 2)).astype(int)
+			self.agent_goal_locs = np.zeros((self.num_agents, 2)).astype(int)
+			self.world = np.zeros((world_x, world_y)) + WORLD['EMPTY']
 
-		# Randomly set the agent and goal locations
-		self.set_random_agent_init_locs()
-		self.set_random_goal_locs()
+			# Randomly set the agent and goal locations
+			self.set_random_agent_init_locs()
+			self.set_random_goal_locs()
 
-		# Initialize a obstacle count and list of obstacles,
-		# and modify these as obstacles are generated and
-		# valid ones are added to the world until the total
-		# number of obstacles desired have been added.
-		obstacle_count = 0
-		self.obs_list = []
-		while obstacle_count < num_obstacles:
-			obstacle_count += self.add_rect_obstacle(self.max_obstacle_dim)
-
-		# Display the world in a nice 2D format and display
-		# a representation of the agent locations, goal locations,
-		# and obstacles in the world.
-		self.display_world()
+			# Initialize a obstacle count and list of obstacles,
+			# and modify these as obstacles are generated and
+			# valid ones are added to the world until the total
+			# number of obstacles desired have been added.
+			obstacle_count = 0
+			self.obs_list = []
+			while obstacle_count < num_obstacles:
+				obstacle_count += self.add_rect_obstacle(self.max_obstacle_dim)
+		else:
+			# Saved state is simply an np array representing 2D grid world
+			# of dimensions desired world_x * world_y. This function allows
+			# you to create a GridWorld2D object directly from a np array
+			# representation of the world
+			self.num_agents = (saved_state == WORLD['AGENT']).sum()
+			self.max_obstacle_dim = None
+			self.agent_locs = np.array(zip(*np.where(saved_state == WORLD['AGENT'])))
+			self.agent_goal_locs = np.array(zip(*np.where(saved_state == WORLD['GOAL'])))
+			self.world = saved_state
+			self.obs_list = zip(*np.where(saved_state == WORLD['GOAL']))
 
 	# Returns a random empty coordinate for the top left
 	# corner of an obstacle.
@@ -436,17 +446,37 @@ class GridWorld2D:
 			'agent_goal_locs': self.agent_goal_locs,
 			'obs_list': self.obs_list
 		}
+	# Allows you to save a world representation so that
+	# later you simply reload this into the GridWorld2D
+	# object instead of generating the world again
+	def save_world(self, h5py_file_obj, dataset_name):
+		h5py_file_obj.create_dataset(dataset_name, data = self.world)
 
 # Test basic functionality
 if __name__ == "__main__":
-	a = GridWorld2D(7, 7, 10, 3, 5)
+	g_world = GridWorld2D(7, 7, 10, 3, 5)
+	print "Initial World"
+	g_world.display_world()
 	print ""
-	moved = a.take_action([1, 0, 0, 0], 0)
+	moved = g_world.take_action([1, 0, 0, 0], 0)
 	if moved:
 		print "AGENT MOVED"
 	else:
 		print "AGENT DIDNT MOVE"
 	print ""
-	a.display_world()
+	print "World after Action"
+	g_world.display_world()
 	print ""
-	a.display_neighborhood_state(5, 0)
+	print "Local State of Agent"
+	g_world.display_neighborhood_state(5, 0)
+	print ""
+	print "World after Reloading from HDF5"
+	h5f = h5py.File('./data/grid_world_data.h5', 'w')
+	g_world.save_world(h5f, 'world1')
+	h5f.close()
+
+	h5f = h5py.File('data/grid_world_data.h5','r')
+	loaded = h5f['world1'][:]
+	h5f.close()
+	loaded_g_world = GridWorld2D(None, None, None, None, None, loaded)
+	loaded_g_world.display_world()
