@@ -131,8 +131,8 @@ class GridWorld2D:
 		# that are in-bounds in the world.
 		for i in range(tl_coor[0], tl_coor[0] + rows):
 			for j in range(tl_coor[1], tl_coor[1] + cols):
-				if out_of_bounds(i, j, len(self.world),
-				len(self.world[0]) ) == False:
+				if not out_of_bounds(i, j, len(self.world),
+				len(self.world[0]) ):
 					rectCoors.append((i, j))
 
 		return rectCoors
@@ -275,7 +275,7 @@ class GridWorld2D:
 					grid[current_points[i][0], current_points[i][1]] = d + 1
 
 			# Go to next layer of distances
-			d = d + 1
+			d += 1
 
 		return grid
 
@@ -290,7 +290,7 @@ class GridWorld2D:
 				col = np.random.randint(0, len(self.world[0]))
 
 			self.world[row, col] = WORLD['AGENT']
-			self.agent_locs[i] = (row, col)
+			self.agent_locs[i] = np.array([row, col])
 
 	# Set random agent goal locations in empty spaces in the world
 	def set_random_goal_locs(self):
@@ -303,17 +303,19 @@ class GridWorld2D:
 				col = np.random.randint(0, len(self.world[0]))
 
 			self.world[row, col] = WORLD['GOAL']
-			self.agent_goal_locs[i] = (row, col)
+			self.agent_goal_locs[i] = np.array([row, col])
 
 	# Takes one hot vector input [LEFT, RIGHT, UP, DOWN]
 	# and indicates whether the move was successful. Used
 	# to update world after a particular agent takes an action
 	def take_action(self, action, agent_index):
+
+		# Make sure a valid action is passed in:
+		assert(np.sum(action) <= 1)
 		# Set new agent position
 		agent_pos = self.agent_locs[agent_index]
-		moved = 0
+		moved = False
 		try_move = True
-		new_position = copy.deepcopy(agent_pos)
 
 		# Move Left
 		if action[0] == 1:
