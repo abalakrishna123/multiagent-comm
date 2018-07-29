@@ -77,14 +77,14 @@ class GridWorld2D:
 	# Initialize world with its x and y dimensions, the
 	# total number of obstacles to be created in the world,
 	# and the total number of agents in the world
-	def __init__(self, world_x, world_y, num_obstacles, num_agents, max_obstacle_dim, saved_state = None):
+	def __init__(self, world_rows, world_cols, num_obstacles, num_agents, max_obstacle_dim, saved_state = None):
 		# World is a 2D array with empty spots, obstacles,
 		# a marker of the agents's current positions, and
 		# the goal's positions.
 		if saved_state is None:
 			# Make sure that the desired world is realizable
 			SLACK = 2
-			assert(SLACK * (2 * num_agents + num_obstacles) < world_x * world_y)
+			assert(SLACK * (2 * num_agents + num_obstacles) < world_rows * world_cols)
 
 			# Initialize agent and goal locations in the world in addition
 			# to initializing all cells in the grid representation in the
@@ -93,7 +93,8 @@ class GridWorld2D:
 			self.max_obstacle_dim = max_obstacle_dim
 			self.agent_locs = np.zeros((self.num_agents, 2)).astype(int)
 			self.agent_goal_locs = np.zeros((self.num_agents, 2)).astype(int)
-			self.world = np.zeros((world_x, world_y)) + WORLD['EMPTY']
+			self.world = np.zeros((world_rows, world_cols)) + WORLD['EMPTY']
+			self.agent_distances_to_goal = self._get_agent_distances_to_goal()
 
 			# Randomly set the agent and goal locations
 			self._set_random_agent_init_locs()
@@ -108,17 +109,14 @@ class GridWorld2D:
 			while obstacle_count < num_obstacles:
 				obstacle_count += self._add_rect_obstacle(self.max_obstacle_dim)
 		else:
-			# Saved state is simply an np array representing 2D grid world
-			# of dimensions desired world_x * world_y. This function allows
-			# you to create a GridWorld2D object directly from a np array
-			# representation of the world
-			self.num_agents = (saved_state == WORLD['AGENT']).sum()
+			# Saved state simply contains all the information in get_world_representation
+			self.agent_locs = saved_state['agent_locs']
+			self.agent_goal_locs = saved_state['agent_goal_locs']
+			self.world = saved_state['world']
+			self.num_agents = len(self.agent_locs)
 			self.max_obstacle_dim = None
-			self.agent_locs = np.array(zip(*np.where(saved_state == WORLD['AGENT'])))
-			self.agent_goal_locs = np.array(zip(*np.where(saved_state == WORLD['GOAL'])))
-			self.world = saved_state
-			self.obs_list = zip(*np.where(saved_state == WORLD['GOAL']))
-
+			self.agent_distances_to_goal = self._get_agent_distances_to_goal()
+			self.obs_list = zip(*np.where(saved_state == WORLD['OBSTACLE']))
 
 	''' Takes one hot vector input [LEFT, RIGHT, UP, DOWN]
 	and indicates whether the move was successful. Used
@@ -148,14 +146,18 @@ class GridWorld2D:
 			try_move = False
 
 		# If agent tried to move, the new position is not out of bounds,
-		# and the new position is not an obstacle, move the agent there
+		# and the new position is not an obstacle/other agent, move the agent
+		# there
 		if try_move and \
 		not _out_of_bounds(new_position[0], new_position[1], len(self.world), len(self.world[0])) and \
-		self.world[new_position[0], new_position[1]] != WORLD['OBSTACLE']:
+		self.world[new_position[0], new_position[1]] != WORLD['OBSTACLE'] and \
+		self.world[new_position[0], new_position[1]] != WORLD['AGENT']:
 			self.world[agent_pos[0], agent_pos[1]] = WORLD['EMPTY']
 			self.world[new_position[0], new_position[1]] = WORLD['AGENT']
 			self.agent_locs[agent_index] = new_position
 			moved = 1
+			# If you make a move update the agent distances to goals as well
+			self.agent_distances_to_goal = self._get_agent_distances_to_goal()
 
 		return moved
 
@@ -276,7 +278,9 @@ class GridWorld2D:
 	later you simply reload this into the GridWorld2D
 	object instead of generating the world again '''
 	def save_world(self, h5py_file_obj, dataset_name):
-		h5py_file_obj.create_dataset(dataset_name, data = self.world)
+		h5py_file_obj.create_dataset(dataset_name + "_agent_locs", data = self.agent_locs)
+		h5py_file_obj.create_dataset(dataset_name + "_agent_goal_locs", data = self.agent_goal_locs)
+		h5py_file_obj.create_dataset(dataset_name + "_world", data = self.world)
 
 	''' Returns a random empty coordinate for the top left
 	corner of an obstacle. '''
@@ -372,19 +376,11 @@ class GridWorld2D:
 		# Check if the obstacle can be added while ensuring there exists
 		# a path between every (agent, agent_goal) pair for every agent
 		# its corresponding goal. If so, add it and indicate that it was
-		# added. The existence of a path between an (agent, agent_goal)
-		# is determined by whether a wavefront starting from the agent_goal
-		# location can expand to the location of the agent
-		can_add_obstacle = True
-
-		for i in range(len(self.agent_locs)):
-			# Check if path is blocked between any (agent, agent goal) pair when adding this obstacle
-			wave_front = self._wave_front(i)
-			if wave_front[self.agent_locs[i][0], self.agent_locs[i][1]] == WORLD['EMPTY']:
-				can_add_obstacle = False
-				break
-
-		if can_add_obstacle:
+		# added. We are specifically ensuring that even with the obstacles
+		# in the environment, there exists a path between every agent and
+		# its goal assuming agents cannot follow paths that contain obstacles
+		agent_distances_to_goal = self._get_agent_distances_to_goal()
+		if agent_distances_to_goal is not None:
 			obstacle_added = 1
 			self.obs_list.append(coordinates)
 
@@ -393,9 +389,38 @@ class GridWorld2D:
 		# the world
 		else:
 			for coor in coordinates:
-				self.world[coor[0], coor[1] ] = WORLD['EMPTY']
+				self.world[coor[0], coor[1]] = WORLD['EMPTY']
+
+		if obstacle_added:
+			self.agent_distances_to_goal = agent_distances_to_goal
 
 		return obstacle_added
+
+	''' Get the distance of each agent to its corresponding goal,
+	assuming that the agent cannot move in a square occupied by
+	an obstacle or occupied by another agent. If there is no
+	path between an agent and its goal, return None.
+	Distances to goals computed assuming agents cannot
+	follow paths through obstacles, but location of other agents
+	are ignored, even though no two agents can occupy the same
+	square. This is because the other agents could presumably
+	move and thus their location is not a big factor in the
+	true distance between an agent and its goal '''
+	def _get_agent_distances_to_goal(self):
+		agent_distances_to_goal = np.zeros(self.num_agents)
+		for i in range(len(self.agent_locs)):
+			agent_distance_to_goal = self._wave_front(i)[self.agent_locs[i][0], self.agent_locs[i][1]]
+
+			# Handle case where agent is on top of goal
+			if np.array_equal(self.agent_locs[i], self.agent_goal_locs[i]):
+				agent_distance_to_goal = 0
+
+			if agent_distance_to_goal == WORLD['EMPTY']:
+				return None
+			else:
+				agent_distances_to_goal[i] = agent_distance_to_goal
+
+		return agent_distances_to_goal
 
 	''' Get wave_front coloring for the world using the wave front
 	potential method. In order to ensure that every agent can
@@ -405,7 +430,8 @@ class GridWorld2D:
 	where the agents location is marked as empty as are the goal
 	positions for every other agent. Then, if we can expand from
 	the agent goal to the agent's position successfully, clearly
-	the agent can reach its goal. '''
+	the agent can reach its goal. Also tells you distance of
+	each agent from their goal.'''
 	def _wave_front(self, agent_index):
 		# Make copy of the world to fill in
 		grid = copy.deepcopy(self.world)
@@ -477,7 +503,7 @@ class GridWorld2D:
 
 # Test basic functionality
 if __name__ == "__main__":
-	g_world = GridWorld2D(7, 7, 10, 3, 5)
+	g_world = GridWorld2D(7, 7, 10, 2, 5)
 	print "Initial World"
 	g_world.display_world()
 	print ""
@@ -492,14 +518,22 @@ if __name__ == "__main__":
 	print ""
 	print "Local State of Agent"
 	g_world.display_neighborhood_state(5, 0)
+	print "AGENT DISTANCES"
+	print g_world.agent_distances_to_goal
 	print ""
 	print "World after Reloading from HDF5"
 	h5f = h5py.File('./data/grid_world_data.h5', 'w')
-	g_world.save_world(h5f, 'world1')
+	g_world.save_world(h5f, 'GridWorld2D_1')
 	h5f.close()
 
 	h5f = h5py.File('data/grid_world_data.h5','r')
-	loaded = h5f['world1'][:]
+	loaded = {}
+	loaded['agent_locs'] = h5f['GridWorld2D_1_agent_locs'][:]
+	loaded['agent_goal_locs'] =  h5f['GridWorld2D_1_agent_goal_locs'][:]
+	loaded['world'] = h5f['GridWorld2D_1_world'][:]
 	h5f.close()
 	loaded_g_world = GridWorld2D(None, None, None, None, None, loaded)
 	loaded_g_world.display_world()
+
+	print "AGENT DISTANCES"
+	print loaded_g_world.agent_distances_to_goal
