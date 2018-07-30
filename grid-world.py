@@ -178,7 +178,7 @@ class GridWorld2D:
 
 		# Fill in neighborhood grid from spaces in the world around the robot
 		# location.
-		# TODO: Check this math
+		# TODO: Check this math, off by one somewhere
 		left = max(0, cols[0])
 		right = min(len(self.world[0]), cols[1] + 1)
 		top = max(0, rows[0])
@@ -206,10 +206,7 @@ class GridWorld2D:
 	def display_neighborhood_state(self, n, agent_index):
 		neighborhood_grid = self.get_neighborhood_state(n, agent_index)
 
-		lineStr = ""
-		for j in range(len(neighborhood_grid[0]) + 2):
-			lineStr += "X "
-		print lineStr
+		print("X " * (len(neighborhood_grid[0]) + 2))
 		for i in range(len(neighborhood_grid)):
 			# Initialize string for that line
 			lineStr = "X "
@@ -225,10 +222,7 @@ class GridWorld2D:
 				else:
 					lineStr += "  "
 			print lineStr + "X "
-		lineStr = ""
-		for j in range(len(neighborhood_grid[0]) + 2):
-			lineStr += "X "
-		print lineStr
+		print("X " * (len(neighborhood_grid[0]) + 2))
 		return
 
 	''' Display the world in a nice 2D format, with an X outside the
