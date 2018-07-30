@@ -172,22 +172,21 @@ class GridWorld2D:
 
 		# Get row and column ranges for the neighborhood state grid
 		# and initialize the neighborhood grid.
-		rows = (self.agent_locs[agent_index][0] - int(n/2), self.agent_locs[agent_index][0] + int(n/2)  )
-		cols = (self.agent_locs[agent_index][1] - int(n/2), self.agent_locs[agent_index][1] + int(n/2)  )
-		neighborhood_grid = np.zeros((n, n))
+		rows = (self.agent_locs[agent_index][0] - int(n/2), self.agent_locs[agent_index][0] + int(n/2))
+		cols = (self.agent_locs[agent_index][1] - int(n/2), self.agent_locs[agent_index][1] + int(n/2))
+		neighborhood_grid = np.ones((n, n)) * WORLD['OBSTACLE']
 
 		# Fill in neighborhood grid from spaces in the world around the robot
 		# location.
-		for row in range(rows[0], rows[1] + 1):
-			for col in range(cols[0], cols[1] + 1):
-				if _out_of_bounds(row, col, len(self.world),
-				len(self.world[0])  ) == False:
-					neighborhood_grid[ row - rows[0],
-					col - cols[0] ] = self.world[row][col]
-				else:
-					neighborhood_grid[ row - rows[0],
-					col - cols[0] ] = WORLD['OBSTACLE']
-
+		# TODO: Check this math
+		left = max(0, cols[0])
+		right = min(len(self.world[0]), cols[1] + 1)
+		top = max(0, rows[0])
+		bottom = min(len(self.world), rows[1] + 1)
+		offset = top - rows[0], left - cols[0]
+		local_grid = self.world[left:right, top:bottom]
+		localy, localx = local_grid.shape
+		neighborhood_grid[offset[0]:offset[0] + localy, offset[1]:offset[1]+localx] = local_grid
 		return neighborhood_grid
 
 	''' Returns current world representation '''
