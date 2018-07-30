@@ -16,12 +16,7 @@ WORLD = {
 ''' Obtain the number of empty spaces in the grid for
 # the wavefront potential function '''
 def _getNumUnvisitedSpaces(grid):
-	numUnvisited = 0
-	for i in range(len(grid)):
-		for j in range(len(grid[i])):
-			if grid[i, j] == WORLD['EMPTY']:
-				numUnvisited = numUnvisited + 1
-	return numUnvisited
+	return np.count_nonzero(grid == WORLD['EMPTY'])
 
 ''' Get list of unvisited points that have neighbors of a given distance '''
 def _getNeighborsD(grid, distance):
@@ -38,10 +33,7 @@ def _getNeighborsD(grid, distance):
 
 ''' Check if there is a neighboring point of some distance '''
 def _checkDistance(neighbors, distance, grid):
-	for i in range(len(neighbors)):
-		if grid[neighbors[i][0], neighbors[i][1] ] == distance:
-			return 1
-	return 0
+	return np.any(grid[neighbors.T] == distance)
 
 ''' Get a list of valid neighbors for any given point in the grid
 for the wavefront potential calculation '''
@@ -65,10 +57,7 @@ def _getNeighbors(point, grid):
 
 ''' Determine if a coordinate is out of bounds in a grid '''
 def _out_of_bounds(row, col, num_rows, num_cols):
-	if row >= num_rows or col >= num_cols or row < 0 or col < 0:
-		return True
-	else:
-		return False
+	return 0 <= rows < num_rows and 0 <= col <= num_cols
 
 ''' Class to handle a 2D world representation where a set of agents navigate
 from starting positions to goal positions amidst a number of randomly
@@ -161,28 +150,45 @@ class GridWorld2D:
 
 		return moved
 
+	''' Generates a message (numpy array) between agents. '''
+	def get_agent_message(self, send_agent_index, n, encoder=None):
+		if encoder is None:
+			return self.get_neighborhood_state(n, send_agent_index)
+		else:
+			return encoder(self.get_neighborhood_state(n, send_agent_index))
+
+	''' Decodes a received message. '''
+	def decode_agent_message(self, msg, decoder=None):
+		if decoder is None:
+			return msg
+		else:
+			return decoder(msg)
+
 	''' Returns a NxN neighborhood of a specific agent centered on the robot location
 	in the world. Out of bounds cells are treated as obstacles. '''
 	def get_neighborhood_state(self, n, agent_index):
 
 		# Get row and column ranges for the neighborhood state grid
 		# and initialize the neighborhood grid.
-		rows = (self.agent_locs[agent_index][0] - int(n/2), self.agent_locs[agent_index][0] + int(n/2)  )
-		cols = (self.agent_locs[agent_index][1] - int(n/2), self.agent_locs[agent_index][1] + int(n/2)  )
-		neighborhood_grid = np.zeros((n, n))
+		rows = (self.agent_locs[agent_index][0] - int(n/2), self.agent_locs[agent_index][0] + int(n/2))
+		cols = (self.agent_locs[agent_index][1] - int(n/2), self.agent_locs[agent_index][1] + int(n/2))
+		neighborhood_grid = np.ones((n, n)) * WORLD['OBSTACLE']
 
 		# Fill in neighborhood grid from spaces in the world around the robot
 		# location.
-		for row in range(rows[0], rows[1] + 1):
-			for col in range(cols[0], cols[1] + 1):
-				if _out_of_bounds(row, col, len(self.world),
-				len(self.world[0])  ) == False:
-					neighborhood_grid[ row - rows[0],
-					col - cols[0] ] = self.world[row][col]
-				else:
-					neighborhood_grid[ row - rows[0],
-					col - cols[0] ] = WORLD['OBSTACLE']
-
+		# for row in range(rows[0], rows[1] + 1):
+		# 	for col in range(cols[0], cols[1] + 1):
+		# 		if _out_of_bounds(row, col, len(self.world), len(self.world[0])) == False:
+		# 			neighborhood_grid[row - rows[0], col - cols[0]] = self.world[row][col]
+		# TODO: Check this math
+		left = max(0, cols[0])
+		right = min(len(self.world[0]), cols[1] + 1)
+		top = max(0, rows[0])
+		bottom = min(len(self.world), rows[1] + 1)
+		offset = top - rows[0], left - cols[0]
+		local_grid = self.world[left:right, top:bottom]
+		localy, localx = local_grid.shape
+		neighborhood_grid[offset[0]:offset[0] + localy, offset[1]:offset[1]+localx]
 		return neighborhood_grid
 
 	''' Returns current world representation '''
@@ -191,20 +197,11 @@ class GridWorld2D:
 
 	''' Determines whether a particular agent has reached its goal '''
 	def goal_test(self, agent_index):
-		if np.array_equal(self.agent_locs[agent_index], self.agent_goal_locs[agent_index]):
-			return True
-		else:
-			return False
+		return np.array_equal(self.agent_locs[agent_index], self.agent_goal_locs[agent_index])
 
 	''' Determines whether all agents have reached their goal '''
 	def game_over_test(self):
-		game_over = True
-		for i in range(len(self.agent_locs)):
-			if not self.goal_test(i):
-				game_over = False
-				return game_over
-
-		return game_over
+		return np.array_equal(self.agent_locs, self.agent_goal_locs)
 
 	''' Computes neighborhood state and displays it similar
 	to the way the world is displayed '''
