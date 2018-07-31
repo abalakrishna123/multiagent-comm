@@ -178,15 +178,14 @@ class GridWorld2D:
 
 		# Fill in neighborhood grid from spaces in the world around the robot
 		# location.
-		# TODO: Check this math, off by one somewhere
 		left = max(0, cols[0])
 		right = min(len(self.world[0]), cols[1] + 1)
 		top = max(0, rows[0])
 		bottom = min(len(self.world), rows[1] + 1)
 		offset = top - rows[0], left - cols[0]
-		local_grid = self.world[left:right, top:bottom]
+		local_grid = self.world[top:bottom, left:right]
 		localy, localx = local_grid.shape
-		neighborhood_grid[offset[0]:offset[0] + localy, offset[1]:offset[1]+localx] = local_grid
+		neighborhood_grid[offset[0]:offset[0] + localy, offset[1]:offset[1] + localx] = local_grid
 		return neighborhood_grid
 
 	''' Returns current world representation '''
@@ -230,10 +229,7 @@ class GridWorld2D:
 	an R for the robot, and a space character for an empty space
 	in the grid. '''
 	def display_world(self):
-		lineStr = ""
-		for j in range(len(self.world[0]) + 2):
-			lineStr += "X "
-		print lineStr
+		print("X " * (len(self.world[0]) + 2))
 		for i in range(len(self.world)):
 			# Initialize string for that line
 			lineStr = "X "
@@ -249,10 +245,7 @@ class GridWorld2D:
 				else:
 					lineStr += "  "
 			print lineStr + "X "
-		lineStr = ""
-		for j in range(len(self.world[0]) + 2):
-			lineStr += "X "
-		print lineStr
+		print("X " * (len(self.world[0]) + 2))
 		return
 
 	''' Return dictionary of robot location, goal location,
